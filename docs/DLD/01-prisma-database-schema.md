@@ -1,6 +1,6 @@
-# 01. Complete Prisma Database Schema Specification
+# 01. Multi-Tenant Prisma Database Schema Specification
 
-This document provides the complete, production-ready `schema.prisma` file definition for the Gym Management Application on Neon PostgreSQL.
+This document provides the complete, production-ready Multi-Tenant `schema.prisma` file definition for the Gym Management SaaS Application on Neon PostgreSQL.
 
 ---
 
@@ -21,8 +21,9 @@ generator client {
 // ==========================================
 
 enum UserRole {
-  ADMIN
-  MEMBER
+  SUPER_ADMIN // SaaS Platform Owner
+  GYM_ADMIN   // Gym Owner / Staff
+  MEMBER      // Gym Member
 }
 
 enum UserStatus {
@@ -63,13 +64,45 @@ enum OrderStatus {
 }
 
 // ==========================================
-// MODELS
+// TENANT MODEL (GYM / BRANCH)
+// ==========================================
+
+model Gym {
+  id           String   @id @default(uuid())
+  name         String
+  slug         String   @unique // e.g. "golds-gym-downtown"
+  code         String   @unique // e.g. "GYM-001"
+  address      String?
+  phone        String?
+  qrSecret     String   @default(uuid()) // Cryptographic secret for dynamic QR HMAC verification
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Tenant Relations
+  users           User[]
+  membershipPlans MembershipPlan[]
+  memberships     Membership[]
+  attendances     Attendance[]
+  dietPlans       DietPlan[]
+  products        Product[]
+  orders          Order[]
+  notifications   Notification[]
+
+  @@index([slug])
+  @@index([code])
+}
+
+// ==========================================
+// DOMAIN MODELS
 // ==========================================
 
 model User {
   id            String      @id @default(uuid())
-  email         String      @unique
-  phone         String      @unique
+  gymId         String
+  gym           Gym         @relation(fields: [gymId], references: [id], onDelete: Cascade)
+  email         String
+  phone         String
   name          String
   passwordHash  String
   role          UserRole    @default(MEMBER)
@@ -94,12 +127,16 @@ model User {
   notifications   Notification[]
   auditLogs       AuditLog[]
 
+  @@unique([gymId, email], name: "gym_user_email_unique")
+  @@unique([gymId, phone], name: "gym_user_phone_unique")
+  @@index([gymId, role])
   @@index([status])
-  @@index([role])
 }
 
 model Attendance {
   id             String           @id @default(uuid())
+  gymId          String
+  gym            Gym              @relation(fields: [gymId], references: [id], onDelete: Cascade)
   userId         String
   user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   attendanceDate DateTime         @db.Date
@@ -108,12 +145,14 @@ model Attendance {
   timestamp      DateTime         @default(now())
   notes          String?
 
-  @@unique([userId, attendanceDate], name: "user_daily_attendance_unique")
-  @@index([attendanceDate, status])
+  @@unique([gymId, userId, attendanceDate], name: "user_gym_daily_attendance_unique")
+  @@index([gymId, attendanceDate, status])
 }
 
 model MembershipPlan {
   id           String   @id @default(uuid())
+  gymId        String
+  gym          Gym      @relation(fields: [gymId], references: [id], onDelete: Cascade)
   name         String
   description  String?
   durationDays Int
@@ -124,10 +163,14 @@ model MembershipPlan {
   updatedAt    DateTime @updatedAt
 
   memberships Membership[]
+
+  @@index([gymId, isActive])
 }
 
 model Membership {
   id        String           @id @default(uuid())
+  gymId     String
+  gym       Gym              @relation(fields: [gymId], references: [id], onDelete: Cascade)
   userId    String
   user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   planId    String
@@ -140,7 +183,7 @@ model Membership {
 
   payments Payment[]
 
-  @@index([userId, status, startDate, endDate])
+  @@index([gymId, userId, status])
 }
 
 model Payment {
@@ -166,9 +209,11 @@ model Payment {
 
 model DietPlan {
   id             String   @id @default(uuid())
+  gymId          String
+  gym            Gym      @relation(fields: [gymId], references: [id], onDelete: Cascade)
   title          String
   description    String?
-  category       String   // e.g., Weight Loss, Muscle Gain
+  category       String   // Weight Loss, Muscle Gain
   targetCalories Int
   proteinGrams   Int
   carbsGrams     Int
@@ -179,13 +224,15 @@ model DietPlan {
 
   dietItems       DietItem[]
   dietAssignments DietAssignment[]
+
+  @@index([gymId])
 }
 
 model DietItem {
   id         String   @id @default(uuid())
   dietPlanId String
   dietPlan   DietPlan @relation(fields: [dietPlanId], references: [id], onDelete: Cascade)
-  mealType   String   // Breakfast, Lunch, Pre-workout, Post-workout, Dinner
+  mealType   String
   foodName   String
   quantity   String
   calories   Int
@@ -204,9 +251,11 @@ model DietAssignment {
 
 model Product {
   id            String   @id @default(uuid())
+  gymId         String
+  gym           Gym      @relation(fields: [gymId], references: [id], onDelete: Cascade)
   name          String
   description   String?
-  category      String   // Protein, Creatine, Accessories
+  category      String
   price         Decimal  @db.Decimal(10, 2)
   stockQuantity Int      @default(0)
   imageUrl      String?
@@ -215,10 +264,14 @@ model Product {
   updatedAt     DateTime @updatedAt
 
   orderItems OrderItem[]
+
+  @@index([gymId, isActive])
 }
 
 model Order {
   id          String      @id @default(uuid())
+  gymId       String
+  gym         Gym         @relation(fields: [gymId], references: [id], onDelete: Cascade)
   userId      String
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   totalAmount Decimal     @db.Decimal(10, 2)
@@ -228,6 +281,8 @@ model Order {
 
   orderItems OrderItem[]
   payments   Payment[]
+
+  @@index([gymId, userId])
 }
 
 model OrderItem {
@@ -242,6 +297,8 @@ model OrderItem {
 
 model Notification {
   id        String   @id @default(uuid())
+  gymId     String
+  gym       Gym      @relation(fields: [gymId], references: [id], onDelete: Cascade)
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   title     String
@@ -250,7 +307,7 @@ model Notification {
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
 
-  @@index([userId, isRead])
+  @@index([gymId, userId, isRead])
 }
 
 model AuditLog {
