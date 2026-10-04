@@ -1,5 +1,6 @@
 import { prisma } from '../../lib/prisma';
 import { verifyAttendanceQRToken } from '../../lib/token';
+import { StreakService } from '../streak/streak.service';
 
 export class AttendanceError extends Error {
   constructor(
@@ -110,22 +111,14 @@ export class AttendanceService {
       throw err;
     }
 
-    // 6. Calculate & Update User Streak and Stars
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (user) {
-      const newStreak = user.currentStreak + 1;
-      const newLongestStreak = Math.max(user.longestStreak, newStreak);
-      const newStarScore = user.starScore + 1;
-
-      await prisma.user.update({
-        where: { id: userId },
-        data: {
-          currentStreak: newStreak,
-          longestStreak: newLongestStreak,
-          starScore: newStarScore,
-        },
-      });
-    }
+    // 6. Calculate & Update User Streak and Stars via Module 04 Engine
+    await StreakService.processAttendanceEvent(
+      userId,
+      gymId,
+      todayLocal.attendanceDate,
+      'PRESENT',
+      { isNewRecord: true }
+    );
 
     return {
       id: attendanceRecord.id,
@@ -265,23 +258,17 @@ export class AttendanceService {
       },
     });
 
-    // 5. Gamification / Anti-Inflation Rules:
-    // Only increment streak/stars if it was a NEW insertion for status PRESENT.
-    // Repeated admin edits/overrides on existing records DO NOT repeatedly inflate stars!
-    if (!existingRecord && input.status === 'PRESENT') {
-      const newStreak = targetUser.currentStreak + 1;
-      const newLongestStreak = Math.max(targetUser.longestStreak, newStreak);
-      const newStarScore = targetUser.starScore + 1;
-
-      await prisma.user.update({
-        where: { id: input.userId },
-        data: {
-          currentStreak: newStreak,
-          longestStreak: newLongestStreak,
-          starScore: newStarScore,
-        },
-      });
-    }
+    // 5. Gamification / Streak Engine (Module 04 Integration)
+    await StreakService.processAttendanceEvent(
+      input.userId,
+      adminGymId,
+      attendanceDate,
+      input.status,
+      {
+        isNewRecord: !existingRecord,
+        previousStatus: existingRecord ? existingRecord.status : null,
+      }
+    );
 
     // 6. Audit Logging (if AuditLog model is available)
     try {
