@@ -7,42 +7,59 @@ import { useAuth } from '../../context/AuthContext';
 import {
   Dumbbell,
   LayoutDashboard,
-  Users,
-  User,
   CreditCard,
   LogOut,
   Menu,
   X,
-  Flame,
-  Star,
-  Award,
-  Receipt,
+  ShieldAlert,
+  ArrowLeft,
 } from 'lucide-react';
 
-export default function UserLayout({ children }: { children: React.ReactNode }) {
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout, isLoading } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const navItems = [
-    { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'Membership Plans', href: '/membership/select', icon: CreditCard },
-    { name: 'Payment History', href: '/payments', icon: Receipt },
-    { name: 'Community', href: '/community', icon: Users },
-    { name: 'My Profile', href: '/profile', icon: User },
-  ];
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-slate-950">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-slate-400 text-sm">Loading Member Portal...</p>
+          <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-slate-400 text-sm">Verifying Admin Access...</p>
         </div>
       </div>
     );
   }
+
+  // Authorization Check: Only GYM_ADMIN & SUPER_ADMIN allowed
+  if (!user || (user.role !== 'GYM_ADMIN' && user.role !== 'SUPER_ADMIN')) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+        <div className="glass-card p-8 rounded-2xl border border-red-500/30 max-w-md w-full text-center space-y-4">
+          <div className="w-12 h-12 bg-red-500/10 text-red-400 rounded-2xl flex items-center justify-center mx-auto border border-red-500/20">
+            <ShieldAlert className="w-6 h-6" />
+          </div>
+          <h2 className="text-xl font-bold text-white">Access Restricted</h2>
+          <p className="text-sm text-slate-400">
+            Admin plan management requires GYM_ADMIN or SUPER_ADMIN authorization.
+          </p>
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-semibold rounded-xl transition w-full"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Return to Member Dashboard
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const navItems = [
+    { name: 'Member Dashboard', href: '/dashboard', icon: LayoutDashboard },
+    { name: 'Plan Management', href: '/plans', icon: CreditCard },
+  ];
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col md:flex-row text-slate-100">
@@ -56,33 +73,25 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
             </div>
             <div>
               <h1 className="font-bold text-white text-base leading-tight">
-                {user?.gym?.name || 'Gym Center'}
+                {user.gym?.name || 'Gym Center'}
               </h1>
-              <span className="text-[10px] uppercase font-bold tracking-wider text-indigo-400">
-                {user?.gym?.code || 'MEMBER PORTAL'}
+              <span className="text-[10px] uppercase font-bold tracking-wider text-amber-400">
+                ADMIN CONSOLE
               </span>
             </div>
           </div>
 
-          {/* User Quick Mini-Card */}
+          {/* Admin User Mini-Card */}
           <div className="p-3.5 bg-slate-800/60 rounded-xl border border-slate-700/50 mb-6">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 rounded-full flex items-center justify-center font-bold text-sm">
-                {user?.name?.charAt(0) || 'M'}
+              <div className="w-10 h-10 bg-amber-500/20 border border-amber-500/30 text-amber-300 rounded-full flex items-center justify-center font-bold text-sm">
+                {user.name.charAt(0)}
               </div>
               <div className="overflow-hidden">
-                <p className="text-sm font-semibold text-white truncate">{user?.name || 'Member'}</p>
-                <div className="flex items-center gap-2 text-[11px] text-amber-400 font-medium">
-                  <span className="flex items-center gap-0.5">
-                    <Flame className="w-3 h-3 fill-amber-400" />
-                    {user?.currentStreak || 0}d
-                  </span>
-                  <span>•</span>
-                  <span className="flex items-center gap-0.5">
-                    <Star className="w-3 h-3 fill-amber-400" />
-                    {user?.starScore || 0}
-                  </span>
-                </div>
+                <p className="text-sm font-semibold text-white truncate">{user.name}</p>
+                <p className="text-[11px] text-amber-400 font-medium uppercase tracking-wider">
+                  {user.role}
+                </p>
               </div>
             </div>
           </div>
@@ -126,7 +135,7 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
           <div className="w-8 h-8 gradient-brand rounded-lg flex items-center justify-center text-white">
             <Dumbbell className="w-5 h-5" />
           </div>
-          <span className="font-bold text-white text-sm">{user?.gym?.name || 'Gym Center'}</span>
+          <span className="font-bold text-white text-sm">Admin Portal</span>
         </div>
 
         <button
@@ -173,7 +182,7 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
         </div>
       )}
 
-      {/* Main Content Viewport */}
+      {/* Main Content Area */}
       <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full overflow-y-auto">
         {children}
       </main>
