@@ -1,0 +1,309 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ==========================================
+// ENUMS
+// ==========================================
+
+enum UserRole {
+  SUPER_ADMIN
+  GYM_ADMIN
+  MEMBER
+}
+
+enum UserStatus {
+  PENDING_MEMBERSHIP
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  EXCUSED
+}
+
+enum ScanMethod {
+  QR_SCAN
+  MANUAL_ADMIN
+}
+
+enum MembershipStatus {
+  ACTIVE
+  EXPIRING_SOON
+  EXPIRED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+enum OrderStatus {
+  PENDING
+  FULFILLED
+  CANCELLED
+}
+
+// ==========================================
+// TENANT MODEL (GYM / BRANCH)
+// ==========================================
+
+model Gym {
+  id           String   @id @default(uuid())
+  name         String
+  slug         String   @unique
+  code         String   @unique
+  address      String?
+  phone        String?
+  qrSecret     String   @default(uuid())
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  users           User[]
+  membershipPlans MembershipPlan[]
+  memberships     Membership[]
+  attendances     Attendance[]
+  dietPlans       DietPlan[]
+  products        Product[]
+  orders          Order[]
+  notifications   Notification[]
+
+  @@index([slug])
+  @@index([code])
+}
+
+// ==========================================
+// DOMAIN MODELS
+// ==========================================
+
+model User {
+  id            String      @id @default(uuid())
+  gymId         String
+  gym           Gym         @relation(fields: [gymId], references: [id], onDelete: Cascade)
+  email         String
+  phone         String
+  name          String
+  passwordHash  String
+  role          UserRole    @default(MEMBER)
+  status        UserStatus  @default(PENDING_MEMBERSHIP)
+  profilePicUrl String?
+  fitnessGoal   String?
+  
+  currentStreak Int         @default(0)
+  longestStreak Int         @default(0)
+  starScore     Int         @default(0)
+  
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  memberships     Membership[]
+  attendances     Attendance[]
+  payments        Payment[]
+  orders          Order[]
+  dietAssignments DietAssignment[]
+  notifications   Notification[]
+  auditLogs       AuditLog[]
+
+  @@unique([gymId, email], name: "gym_user_email_unique")
+  @@unique([gymId, phone], name: "gym_user_phone_unique")
+  @@index([gymId, role])
+  @@index([status])
+}
+
+model Attendance {
+  id             String           @id @default(uuid())
+  gymId          String
+  gym            Gym              @relation(fields: [gymId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attendanceDate DateTime         @db.Date
+  status         AttendanceStatus @default(PRESENT)
+  scanMethod     ScanMethod       @default(QR_SCAN)
+  timestamp      DateTime         @default(now())
+  notes          String?
+
+  @@unique([gymId, userId, attendanceDate], name: "user_gym_daily_attendance_unique")
+  @@index([gymId, attendanceDate, status])
+}
+
+model MembershipPlan {
+  id           String   @id @default(uuid())
+  gymId        String
+  gym          Gym      @relation(fields: [gymId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  durationDays Int
+  price        Decimal  @db.Decimal(10, 2)
+  benefits     String[]
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships Membership[]
+
+  @@index([gymId, isActive])
+}
+
+model Membership {
+  id        String           @id @default(uuid())
+  gymId     String
+  gym       Gym              @relation(fields: [gymId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId    String
+  plan      MembershipPlan   @relation(fields: [planId], references: [id])
+  startDate DateTime
+  endDate   DateTime
+  status    MembershipStatus @default(ACTIVE)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  payments Payment[]
+
+  @@index([gymId, userId, status])
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  userId            String
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  membershipId      String?
+  membership        Membership?   @relation(fields: [membershipId], references: [id])
+  razorpayOrderId   String        @unique
+  razorpayPaymentId String?       @unique
+  razorpaySignature String?
+  amount            Decimal       @db.Decimal(10, 2)
+  currency          String        @default("INR")
+  status            PaymentStatus @default(PENDING)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  order   Order?  @relation(fields: [orderId], references: [id])
+  orderId String?
+
+  @@index([userId, status])
+}
+
+model DietPlan {
+  id             String   @id @default(uuid())
+  gymId          String
+  gym            Gym      @relation(fields: [gymId], references: [id], onDelete: Cascade)
+  title          String
+  description    String?
+  category       String
+  targetCalories Int
+  proteinGrams   Int
+  carbsGrams     Int
+  fatsGrams      Int
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  dietItems       DietItem[]
+  dietAssignments DietAssignment[]
+
+  @@index([gymId])
+}
+
+model DietItem {
+  id         String   @id @default(uuid())
+  dietPlanId String
+  dietPlan   DietPlan @relation(fields: [dietPlanId], references: [id], onDelete: Cascade)
+  mealType   String
+  foodName   String
+  quantity   String
+  calories   Int
+}
+
+model DietAssignment {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dietPlanId String
+  dietPlan   DietPlan @relation(fields: [dietPlanId], references: [id])
+  assignedAt DateTime @default(now())
+
+  @@unique([userId])
+}
+
+model Product {
+  id            String   @id @default(uuid())
+  gymId         String
+  gym           Gym      @relation(fields: [gymId], references: [id], onDelete: Cascade)
+  name          String
+  description   String?
+  category      String
+  price         Decimal  @db.Decimal(10, 2)
+  stockQuantity Int      @default(0)
+  imageUrl      String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  orderItems OrderItem[]
+
+  @@index([gymId, isActive])
+}
+
+model Order {
+  id          String      @id @default(uuid())
+  gymId       String
+  gym         Gym         @relation(fields: [gymId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  totalAmount Decimal     @db.Decimal(10, 2)
+  status      OrderStatus @default(PENDING)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  orderItems OrderItem[]
+  payments   Payment[]
+
+  @@index([gymId, userId])
+}
+
+model OrderItem {
+  id        String  @id @default(uuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+  quantity  Int
+  unitPrice Decimal @db.Decimal(10, 2)
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  gymId     String
+  gym       Gym      @relation(fields: [gymId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  actionUrl String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([gymId, userId, isRead])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  adminId   String
+  admin     User     @relation(fields: [adminId], references: [id])
+  action    String
+  targetId  String?
+  reason    String
+  createdAt DateTime @default(now())
+}
